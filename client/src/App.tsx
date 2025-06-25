@@ -1,66 +1,46 @@
-import { useState } from 'react'
-import beaver from './assets/beaver.svg'
-import { Button } from './components/ui/button'
-import { hcWithType } from 'server/dist/client'
-
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:3000"
-
-const client = hcWithType(SERVER_URL);
-
-type ResponseType = Awaited<ReturnType<typeof client.hello.$get>>;
+import { AuthButton } from './components/AuthButton'
 
 function App() {
-  const [data, setData] = useState<Awaited<ReturnType<ResponseType["json"]>> | undefined>()
-
-  async function sendRequest() {
-    try {
-      const res = await client.hello.$get()
-      if (!res.ok) {
-        console.log("Error fetching data")
-        return
-      }
-      const data = await res.json()
-      setData(data)
-    } catch (error) {
-      console.log(error)
-    }
-  }
-
   return (
-    <div className="max-w-xl mx-auto flex flex-col gap-6 items-center justify-center min-h-screen">
-      <a href="https://github.com/stevedylandev/bhvr" target="_blank">
-        <img
-          src={beaver}
-          className="w-16 h-16 cursor-pointer"
-          alt="beaver logo"
-        />
-      </a>
-      <h1 className="text-5xl font-black">bhvr</h1>
-      <h2 className="text-2xl font-bold">Bun + Hono + Vite + React</h2>
-      <p>A typesafe fullstack monorepo</p>
-      <div className='flex items-center gap-4'>
-        <Button
-          onClick={sendRequest}
-        >
-          Call API
-        </Button>
-        <Button
-          variant='secondary'
-          asChild
-        >
-          <a target='_blank' href="https://bhvr.dev">
-          Docs
-          </a>
-        </Button>
-      </div>
-        {data && (
-          <pre className="bg-gray-100 p-4 rounded-md">
-            <code>
-            Message: {data.message} <br />
-            Success: {data.success.toString()}
-            </code>
-          </pre>
-        )}
+    <div className="max-w-4xl mx-auto p-6">
+      <header className="flex justify-between items-center mb-8">
+        <h1 className="text-3xl font-bold">Onchain Transaction Hooks</h1>
+        <AuthButton />
+      </header>
+      
+      <main className="flex flex-col gap-6">
+        <div className="text-center py-12">
+          <h2 className="text-5xl font-black mb-4">🪝</h2>
+          <h2 className="text-2xl font-bold mb-2">Automated On-Chain Transactions</h2>
+          <p className="text-gray-600 max-w-2xl mx-auto">
+            Bid in perpetual auctions for the right to auto-trigger transactions 
+            in response to specific blockchain events. Connect your wallet to get started.
+          </p>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-6">
+          <div className="border rounded-lg p-6">
+            <h3 className="font-semibold mb-2">🏆 Auction System</h3>
+            <p className="text-sm text-gray-600">
+              Bid on event signatures to win automation rights. Highest bidder gets to trigger transactions.
+            </p>
+          </div>
+          
+          <div className="border rounded-lg p-6">
+            <h3 className="font-semibold mb-2">⚡ Ultra-Fast Execution</h3>
+            <p className="text-sm text-gray-600">
+              Using Flashblocks WebSocket + sendRawTransactionSync for ~200ms execution times.
+            </p>
+          </div>
+          
+          <div className="border rounded-lg p-6">
+            <h3 className="font-semibold mb-2">🔧 Custom Templates</h3>
+            <p className="text-sm text-gray-600">
+              Build complex transaction workflows with variable injection from event data.
+            </p>
+          </div>
+        </div>
+      </main>
     </div>
   )
 }
