@@ -2,6 +2,7 @@
 pragma solidity ^0.8.19;
 
 import "forge-std/console.sol";
+import "./IHookConsumer.sol";
 
 contract EventHookAuction {
     // Custom errors
@@ -11,17 +12,10 @@ contract EventHookAuction {
     error ZeroBid();
     error OnlyOwner();
     error AuctionNotActive();
+    error InvalidSignature();
+    error AuctionAlreadyExecuted();
+    error InvalidVaultAddress();
 
-    struct EventFilter {
-        address contractAddress;
-        bytes32 topic0; // Event signature hash
-        bytes32 topic1; // Optional indexed parameter 1
-        bytes32 topic2; // Optional indexed parameter 2
-        bytes32 topic3; // Optional indexed parameter 3
-        bool useTopic1;
-        bool useTopic2;
-        bool useTopic3;
-    }
 
     struct Auction {
         address currentBidder;
@@ -29,14 +23,21 @@ contract EventHookAuction {
         uint256 minimumBid;
         uint256 lastBidTime;
         bool isActive;
+        bool isExecuted;
         EventFilter filter;
     }
 
     // Map event filter hash to auction
     mapping(bytes32 => Auction) public auctions;
+    
+    // Map winner address to nonce for replay protection
+    mapping(address => uint256) public nonces;
 
     // Protocol owner
     address public owner;
+    
+    // Authorized executor address for withdrawals
+    address public executor;
 
     // Minimum bid increment (1% increase required)
     uint256 public constant MIN_BID_INCREMENT = 101; // 101/100 = 1.01x
@@ -46,14 +47,16 @@ contract EventHookAuction {
     event AuctionCreated(bytes32 indexed filterHash, EventFilter filter, uint256 minimumBid);
     event BidPlaced(bytes32 indexed filterHash, address indexed bidder, uint256 amount);
     event AuctionWon(bytes32 indexed filterHash, address indexed winner, uint256 amount);
+    event WinningsWithdrawn(bytes32 indexed filterHash, address indexed winner, address vault, uint256 amount);
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert OnlyOwner();
         _;
     }
 
-    constructor() {
+    constructor(address _executor) {
         owner = msg.sender;
+        executor = _executor;
     }
 
     /**
@@ -109,6 +112,69 @@ contract EventHookAuction {
     }
 
     /**
+     * @dev Withdraw winnings with signature verification
+     * Called by the automation system via multicall after executing hook
+     */
+    function withdrawWinnings(
+        bytes32 filterHash,
+        address vault,
+        uint256 nonce,
+        bytes memory signature
+    ) external {
+        if (vault == address(0)) revert InvalidVaultAddress();
+        
+        Auction storage auction = auctions[filterHash];
+        if (auction.isExecuted) revert AuctionAlreadyExecuted();
+        if (!auction.isActive) revert AuctionNotActive();
+        
+        address winner = auction.currentBidder;
+        uint256 amount = auction.currentBid;
+        
+        // Verify signature
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(
+                "\x19Ethereum Signed Message:\n32",
+                keccak256(abi.encode(filterHash, vault, nonce, address(this)))
+            )
+        );
+        
+        address signer = _recoverSigner(messageHash, signature);
+        if (signer != executor) revert InvalidSignature();
+        if (nonce != nonces[executor]) revert InvalidSignature();
+        
+        // Mark as executed and increment nonce
+        auction.isExecuted = true;
+        nonces[executor]++;
+        
+        // Transfer winnings to vault
+        payable(vault).transfer(amount);
+        
+        emit WinningsWithdrawn(filterHash, winner, vault, amount);
+        emit AuctionWon(filterHash, winner, amount);
+    }
+    
+    /**
+     * @dev Recover signer from signature
+     */
+    function _recoverSigner(bytes32 messageHash, bytes memory signature) internal pure returns (address) {
+        if (signature.length != 65) return address(0);
+        
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+        
+        assembly {
+            r := mload(add(signature, 32))
+            s := mload(add(signature, 64))
+            v := byte(0, mload(add(signature, 96)))
+        }
+        
+        if (v < 27) v += 27;
+        
+        return ecrecover(messageHash, v, r, s);
+    }
+
+    /**
      * @dev Get current auction state for a filter
      */
     function getAuction(bytes32 filterHash)
@@ -120,6 +186,7 @@ contract EventHookAuction {
             uint256 minimumBid,
             uint256 lastBidTime,
             bool isActive,
+            bool isExecuted,
             EventFilter memory filter
         )
     {
@@ -130,6 +197,7 @@ contract EventHookAuction {
             auction.minimumBid,
             auction.lastBidTime,
             auction.isActive,
+            auction.isExecuted,
             auction.filter
         );
     }
@@ -146,6 +214,13 @@ contract EventHookAuction {
      */
     function setAuctionActive(bytes32 filterHash, bool active) external onlyOwner {
         auctions[filterHash].isActive = active;
+    }
+
+    /**
+     * @dev Update executor address (for key rotation)
+     */
+    function setExecutor(address _executor) external onlyOwner {
+        executor = _executor;
     }
 
     /**

@@ -8,8 +8,16 @@ export class EventMonitor {
   private hookExecutor: HookExecutor;
   private monitoredSignatures = new Map<string, EventSignature>();
 
-  constructor(flashblocksWsUrl: string, rpcUrl: string, sendRawTxSyncUrl: string, multicallAddress: `0x${string}`) {
-    this.hookExecutor = new HookExecutor(rpcUrl, sendRawTxSyncUrl, multicallAddress);
+  constructor(
+    flashblocksWsUrl: string, 
+    rpcUrl: string, 
+    sendRawTxSyncUrl: string, 
+    multicallAddress: `0x${string}`,
+    auctionContractAddress: `0x${string}`,
+    executorPrivateKey: `0x${string}`,
+    vaultAddress: `0x${string}`
+  ) {
+    this.hookExecutor = new HookExecutor(rpcUrl, sendRawTxSyncUrl, multicallAddress, auctionContractAddress, executorPrivateKey, vaultAddress);
     this.flashblocksListener = new FlashblocksListener(
       flashblocksWsUrl,
       this.handleEventDetected.bind(this),

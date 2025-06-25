@@ -8,10 +8,10 @@
     "dev": "bun --watch run src/index.ts && tsc --watch",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:reset": "rm -f database.sqlite* && bun run db:migrate"
   },
   "dependencies": {
-    "better-sqlite3": "^12.1.0",
     "drizzle-orm": "^0.44.2",
     "hono": "^4.7.11",
     "iron-session": "^8.0.4",

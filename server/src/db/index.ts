@@ -1,12 +1,12 @@
-import { drizzle } from 'drizzle-orm/better-sqlite3';
-import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { Database } from 'bun:sqlite';
 import * as schema from './schema';
 
-// Create SQLite database file
+// Create SQLite database file using Bun's native SQLite
 const sqlite = new Database('database.sqlite');
 
 // Enable WAL mode for better concurrent performance
-sqlite.pragma('journal_mode = WAL');
+sqlite.exec('PRAGMA journal_mode = WAL');
 
 // Create Drizzle instance
 export const db = drizzle(sqlite, { schema });

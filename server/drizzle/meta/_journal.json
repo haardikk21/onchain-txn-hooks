@@ -8,6 +8,13 @@
       "when": 1750808096296,
       "tag": "0000_sweet_iron_monger",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1750861683597,
+      "tag": "0001_futuristic_arclight",
+      "breakpoints": true
     }
   ]
 }

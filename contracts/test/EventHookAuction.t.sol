@@ -3,46 +3,49 @@ pragma solidity ^0.8.19;
 
 import "forge-std/Test.sol";
 import "../src/EventHookAuction.sol";
+import "../src/IHookConsumer.sol";
 
 contract EventHookAuctionTest is Test {
     EventHookAuction public auction;
     address public owner;
+    address public executor;
     address public bidder1;
     address public bidder2;
 
-    // Example event filter for UniswapV3 PoolCreated
-    EventHookAuction.EventFilter public poolCreatedFilter;
+    // Example event filter for UniswapV4 Initialize
+    EventFilter public initializeFilter;
     bytes32 public filterHash;
 
     function setUp() public {
         owner = makeAddr("owner");
+        executor = makeAddr("executor");
         bidder1 = makeAddr("bidder1");
         bidder2 = makeAddr("bidder2");
 
         vm.prank(owner);
-        auction = new EventHookAuction();
+        auction = new EventHookAuction(executor);
 
-        // Create a filter for UniswapV3 PoolCreated event
-        // PoolCreated(address indexed token0, address indexed token1, uint24 indexed fee, int24 tickSpacing, address pool)
-        poolCreatedFilter = EventHookAuction.EventFilter({
-            contractAddress: address(0x1F98431c8aD98523631AE4a59f267346ea31F984), // UniswapV3Factory
-            topic0: keccak256("PoolCreated(address,address,uint24,int24,address)"),
-            topic1: bytes32(uint256(uint160(address(0xA0b86a33E6411e3036)))), // WETH
-            topic2: bytes32(0), // Any token1
-            topic3: bytes32(uint256(3000)), // 0.3% fee tier
-            useTopic1: true,  // Filter on token0 = WETH
-            useTopic2: false, // Don't filter on token1
-            useTopic3: true   // Filter on fee = 3000
+        // Create a filter for UniswapV4 Initialize event
+        // Initialize(PoolId indexed poolId, Currency indexed currency0, Currency indexed currency1, uint24 fee, int24 tickSpacing, IHooks hooks)
+        initializeFilter = EventFilter({
+            contractAddress: address(0x7Da1D65F8B249183667cdE74C5CBD46dD38AA829), // UniswapV4 PoolManager (Base Sepolia)
+            topic0: keccak256("Initialize(bytes32,address,address,uint24,int24,address)"),
+            topic1: bytes32(0), // Any poolId
+            topic2: bytes32(uint256(uint160(address(0x4200000000000000000000000000000000000006)))), // WETH on Base
+            topic3: bytes32(0), // Any currency1
+            useTopic1: false, // Don't filter on poolId
+            useTopic2: true,  // Filter on currency0 = WETH
+            useTopic3: false  // Don't filter on currency1
         });
 
-        filterHash = auction.getFilterHash(poolCreatedFilter);
+        filterHash = auction.getFilterHash(initializeFilter);
     }
 
     function testFirstBidCreatesAuction() public {
         // First bid should create the auction
         vm.deal(bidder1, 10 ether);
         vm.prank(bidder1);
-        auction.placeBid{value: 1 ether}(poolCreatedFilter);
+        auction.placeBid{value: 1 ether}(initializeFilter);
 
         (
             address currentBidder,
@@ -50,14 +53,15 @@ contract EventHookAuctionTest is Test {
             uint256 minimumBid,
             uint256 lastBidTime,
             bool isActive,
-            EventHookAuction.EventFilter memory filter
+            bool isExecuted,
+            EventFilter memory filter
         ) = auction.getAuction(filterHash);
 
         assertEq(currentBidder, bidder1);
         assertEq(currentBid, 1 ether);
         assertEq(minimumBid, 1 ether); // First bid sets minimum
         assertTrue(isActive);
-        assertEq(filter.contractAddress, poolCreatedFilter.contractAddress);
+        assertEq(filter.contractAddress, initializeFilter.contractAddress);
         assertTrue(auction.auctionExists(filterHash));
     }
 
@@ -65,14 +69,14 @@ contract EventHookAuctionTest is Test {
         // First bid creates auction
         vm.deal(bidder1, 10 ether);
         vm.prank(bidder1);
-        auction.placeBid{value: 1 ether}(poolCreatedFilter);
+        auction.placeBid{value: 1 ether}(initializeFilter);
 
         // Second bid
         vm.deal(bidder2, 10 ether);
         vm.prank(bidder2);
-        auction.placeBid{value: 1.01 ether}(poolCreatedFilter);
+        auction.placeBid{value: 1.01 ether}(initializeFilter);
 
-        (address currentBidder, uint256 currentBid,,,, ) = auction.getAuction(filterHash);
+        (address currentBidder, uint256 currentBid,,,,, ) = auction.getAuction(filterHash);
         assertEq(currentBidder, bidder2);
         assertEq(currentBid, 1.01 ether);
     }
@@ -81,19 +85,19 @@ contract EventHookAuctionTest is Test {
         // First bid creates auction
         vm.deal(bidder1, 10 ether);
         vm.prank(bidder1);
-        auction.placeBid{value: 1 ether}(poolCreatedFilter);
+        auction.placeBid{value: 1 ether}(initializeFilter);
 
         // Second bid must be at least 1.01x higher
         vm.deal(bidder2, 10 ether);
         vm.prank(bidder2);
         vm.expectRevert(abi.encodeWithSelector(EventHookAuction.BidTooLow.selector, 1.01 ether, 1.005 ether));
-        auction.placeBid{value: 1.005 ether}(poolCreatedFilter);
+        auction.placeBid{value: 1.005 ether}(initializeFilter);
 
         // Valid higher bid
         vm.prank(bidder2);
-        auction.placeBid{value: 1.01 ether}(poolCreatedFilter);
+        auction.placeBid{value: 1.01 ether}(initializeFilter);
 
-        (address currentBidder, uint256 currentBid,,,, ) = auction.getAuction(filterHash);
+        (address currentBidder, uint256 currentBid,,,,, ) = auction.getAuction(filterHash);
         assertEq(currentBidder, bidder2);
         assertEq(currentBid, 1.01 ether);
     }
@@ -102,14 +106,14 @@ contract EventHookAuctionTest is Test {
         // First bid
         vm.deal(bidder1, 10 ether);
         vm.prank(bidder1);
-        auction.placeBid{value: 1 ether}(poolCreatedFilter);
+        auction.placeBid{value: 1 ether}(initializeFilter);
 
         uint256 bidder1BalanceBefore = bidder1.balance;
 
         // Second bid should refund first bidder
         vm.deal(bidder2, 10 ether);
         vm.prank(bidder2);
-        auction.placeBid{value: 1.01 ether}(poolCreatedFilter);
+        auction.placeBid{value: 1.01 ether}(initializeFilter);
 
         assertEq(bidder1.balance, bidder1BalanceBefore + 1 ether);
     }
@@ -121,7 +125,7 @@ contract EventHookAuctionTest is Test {
         // First bid creates auction
         vm.deal(bidder1, 10 ether);
         vm.prank(bidder1);
-        auction.placeBid{value: 1 ether}(poolCreatedFilter);
+        auction.placeBid{value: 1 ether}(initializeFilter);
 
         assertTrue(auction.auctionExists(filterHash));
     }
@@ -131,13 +135,13 @@ contract EventHookAuctionTest is Test {
 
         vm.deal(bidder1, 10 ether);
         vm.prank(bidder1);
-        auction.placeBid{value: 1 ether}(poolCreatedFilter);
+        auction.placeBid{value: 1 ether}(initializeFilter);
 
         assertEq(auction.getWinner(filterHash), bidder1);
     }
 
     function testInvalidBids() public {
-        EventHookAuction.EventFilter memory invalidFilter = poolCreatedFilter;
+        EventFilter memory invalidFilter = initializeFilter;
         
         // Test invalid contract address
         invalidFilter.contractAddress = address(0);
@@ -147,7 +151,7 @@ contract EventHookAuctionTest is Test {
         auction.placeBid{value: 1 ether}(invalidFilter);
 
         // Test invalid topic0
-        invalidFilter.contractAddress = poolCreatedFilter.contractAddress;
+        invalidFilter.contractAddress = initializeFilter.contractAddress;
         invalidFilter.topic0 = bytes32(0);
         vm.prank(bidder1);
         vm.expectRevert(EventHookAuction.InvalidTopic0.selector);
@@ -156,7 +160,7 @@ contract EventHookAuctionTest is Test {
         // Test zero bid
         vm.prank(bidder1);
         vm.expectRevert(EventHookAuction.ZeroBid.selector);
-        auction.placeBid{value: 0}(poolCreatedFilter);
+        auction.placeBid{value: 0}(initializeFilter);
     }
 
     function testOnlyOwnerFunctions() public {

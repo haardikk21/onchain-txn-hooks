@@ -67,22 +67,20 @@ export type AuctionBid = {
   isWinning: boolean;
 };
 
-// User Wallet Types
-export type UserWallet = {
+// HookConsumer Types (replaces UserWallet system)
+export type HookConsumer = {
   id: string;
   owner: Address; // User's main wallet address (connected via RainbowKit)
-  automationAddress: Address; // Generated automation wallet address
-  privateKeyEncrypted: string; // Encrypted private key for automation wallet
+  contractAddress: Address; // Deployed HookConsumer contract address
   isActive: boolean;
   createdAt: number;
 };
 
-// Hook Configuration Types
+// Hook Configuration Types (updated for HookConsumer pattern)
 export type EventHook = {
   id: string;
   eventSignature: string;
-  automationWallet: Address; // Points to user's automation wallet
-  transactionTemplate: TransactionTemplate;
+  hookConsumer: Address; // Points to user's deployed HookConsumer contract
   isActive: boolean;
   executionCount: number;
   lastExecuted: number | null;
@@ -127,14 +125,14 @@ export type AuthSession = {
 export type User = {
   id: string;
   address: Address; // Main wallet address from RainbowKit
-  automationWallet: UserWallet | null;
+  hookConsumers: HookConsumer[]; // User's deployed HookConsumer contracts
   createdAt: number;
   lastLoginAt: number;
 };
 
 // WebSocket Message Types
 export type WSMessage = {
-  type: "event_detected" | "hook_executed" | "auction_update" | "wallet_update";
-  data: DetectedEvent | HookExecution | EventAuction | UserWallet;
+  type: "event_detected" | "hook_executed" | "auction_update" | "hook_consumer_update";
+  data: DetectedEvent | HookExecution | EventAuction | HookConsumer;
   timestamp: number;
 };

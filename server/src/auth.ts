@@ -1,10 +1,8 @@
 import { Hono } from 'hono';
 import { SiweMessage } from 'siwe';
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import { getWalletWithBalances } from './wallet-utils';
 import { UserService } from './db/services/user-service';
 import { AuthService } from './db/services/auth-service';
-import type { ApiResponse, AuthSession, User, UserWallet } from 'shared/dist';
+import type { ApiResponse, AuthSession, User, HookConsumer } from 'shared/dist';
 
 // Simple nonce store (replace with Redis in production)
 const nonces = new Set<string>();
@@ -47,7 +45,7 @@ auth.post('/verify', async (c) => {
     // Create or get existing user
     let user = await UserService.getUserByAddress(userAddress);
     if (!user) {
-      // First time user - create user and automation wallet
+      // First time user - just create user record
       const newUser = {
         id: crypto.randomUUID(),
         address: userAddress as `0x${string}`,
@@ -56,12 +54,6 @@ auth.post('/verify', async (c) => {
       };
       
       user = await UserService.createUser(newUser);
-      
-      // Create automation wallet
-      const automationWallet = await createAutomationWallet(userAddress);
-      const createdWallet = await UserService.createAutomationWallet(automationWallet);
-      
-      user.automationWallet = createdWallet;
     } else {
       await UserService.updateLastLogin(userAddress);
       user.lastLoginAt = Date.now(); // Update local object too
@@ -147,89 +139,12 @@ auth.post('/logout', async (c) => {
   return c.json({ success: true });
 });
 
-/**
- * Get automation wallet balance
- */
-auth.get('/wallet/balance', async (c) => {
-  const sessionId = getCookieValue(c.req.header('Cookie'), 'sessionId');
-  
-  if (!sessionId) {
-    return c.json({ error: 'No session' }, 401);
-  }
-  
-  const isValid = await AuthService.isSessionValid(sessionId);
-  if (!isValid) {
-    return c.json({ error: 'Invalid or expired session' }, 401);
-  }
-  
-  const session = await AuthService.getSession(sessionId);
-  if (!session) {
-    return c.json({ error: 'Session not found' }, 401);
-  }
-  
-  const user = await UserService.getUserByAddress(session.userAddress);
-  if (!user || !user.automationWallet) {
-    return c.json({ error: 'User or wallet not found' }, 404);
-  }
-  
-  try {
-    // Get token addresses from query params (comma-separated)
-    const tokensParam = c.req.query('tokens');
-    const tokenAddresses = tokensParam ? tokensParam.split(',') : [];
-    
-    const walletInfo = await getWalletWithBalances(
-      user.automationWallet.automationAddress,
-      tokenAddresses as `0x${string}`[]
-    );
-    
-    const response: ApiResponse<typeof walletInfo> = {
-      success: true,
-      data: walletInfo,
-    };
-    
-    return c.json(response);
-  } catch (error) {
-    console.error('Error fetching wallet balance:', error);
-    return c.json({ error: 'Failed to fetch balance' }, 500);
-  }
-});
-
-/**
- * Create automation wallet for user
- */
-async function createAutomationWallet(userAddress: string): Promise<UserWallet> {
-  // Generate new private key for automation
-  const privateKey = generatePrivateKey();
-  const account = privateKeyToAccount(privateKey);
-  
-  // In production, encrypt the private key before storing
-  const encryptedPrivateKey = await encryptPrivateKey(privateKey);
-  
-  const wallet: UserWallet = {
-    id: crypto.randomUUID(),
-    owner: userAddress as `0x${string}`,
-    automationAddress: account.address,
-    privateKeyEncrypted: encryptedPrivateKey,
-    isActive: true,
-    createdAt: Date.now(),
-  };
-  
-  return wallet;
-}
 
 /**
  * Convert User to serializable format (no BigInt conversion needed anymore)
  */
 function serializeUser(user: User): any {
   return user;
-}
-
-/**
- * Simple encryption for private key (use proper encryption in production)
- */
-async function encryptPrivateKey(privateKey: string): Promise<string> {
-  // This is a placeholder - use proper encryption like AES with environment variables
-  return Buffer.from(privateKey).toString('base64');
 }
 
 /**

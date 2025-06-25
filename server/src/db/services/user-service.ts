@@ -1,12 +1,12 @@
 import { eq, and } from 'drizzle-orm';
-import { db, users, userWallets, authSessions } from '../index';
-import type { User, UserWallet, AuthSession } from 'shared/dist';
+import { db, users, hookConsumers, authSessions } from '../index';
+import type { User, HookConsumer, AuthSession } from 'shared/dist';
 
 export class UserService {
   /**
    * Create a new user
    */
-  static async createUser(userData: Omit<User, 'automationWallet'>): Promise<User> {
+  static async createUser(userData: Omit<User, 'hookConsumers'>): Promise<User> {
     const insertedUsers = await db.insert(users).values({
       id: userData.id,
       address: userData.address,
@@ -16,7 +16,7 @@ export class UserService {
 
     return {
       ...insertedUsers[0],
-      automationWallet: null,
+      hookConsumers: [],
     } as User;
   }
 
@@ -28,12 +28,12 @@ export class UserService {
     
     if (userResults.length === 0) return null;
 
-    // Get automation wallet
-    const walletResults = await db.select().from(userWallets).where(eq(userWallets.owner, address)).limit(1);
+    // Get hook consumers
+    const consumerResults = await db.select().from(hookConsumers).where(eq(hookConsumers.owner, address));
 
     return {
       ...userResults[0],
-      automationWallet: walletResults.length > 0 ? (walletResults[0] as UserWallet) : null,
+      hookConsumers: consumerResults as HookConsumer[],
     } as User;
   }
 
@@ -47,40 +47,38 @@ export class UserService {
   }
 
   /**
-   * Create automation wallet for user
+   * Register hook consumer contract for user
    */
-  static async createAutomationWallet(walletData: UserWallet): Promise<UserWallet> {
-    const insertedWallets = await db.insert(userWallets).values({
-      id: walletData.id,
-      owner: walletData.owner,
-      automationAddress: walletData.automationAddress,
-      privateKeyEncrypted: walletData.privateKeyEncrypted,
-      isActive: walletData.isActive,
-      createdAt: walletData.createdAt,
+  static async createHookConsumer(consumerData: HookConsumer): Promise<HookConsumer> {
+    const insertedConsumers = await db.insert(hookConsumers).values({
+      id: consumerData.id,
+      owner: consumerData.owner,
+      contractAddress: consumerData.contractAddress,
+      isActive: consumerData.isActive,
+      createdAt: consumerData.createdAt,
     }).returning();
 
-    return insertedWallets[0] as UserWallet;
+    return insertedConsumers[0] as HookConsumer;
   }
 
   /**
-   * Get automation wallet by owner address
+   * Get hook consumers by owner address
    */
-  static async getAutomationWallet(ownerAddress: string): Promise<UserWallet | null> {
-    const wallets = await db.select().from(userWallets)
-      .where(eq(userWallets.owner, ownerAddress))
-      .limit(1);
+  static async getHookConsumers(ownerAddress: string): Promise<HookConsumer[]> {
+    const consumers = await db.select().from(hookConsumers)
+      .where(eq(hookConsumers.owner, ownerAddress));
 
-    return wallets.length > 0 ? (wallets[0] as UserWallet) : null;
+    return consumers as HookConsumer[];
   }
 
   /**
-   * Get automation wallet by automation address
+   * Get hook consumer by contract address
    */
-  static async getAutomationWalletByAddress(automationAddress: string): Promise<UserWallet | null> {
-    const wallets = await db.select().from(userWallets)
-      .where(eq(userWallets.automationAddress, automationAddress))
+  static async getHookConsumerByAddress(contractAddress: string): Promise<HookConsumer | null> {
+    const consumers = await db.select().from(hookConsumers)
+      .where(eq(hookConsumers.contractAddress, contractAddress))
       .limit(1);
 
-    return wallets.length > 0 ? (wallets[0] as UserWallet) : null;
+    return consumers.length > 0 ? (consumers[0] as HookConsumer) : null;
   }
 }

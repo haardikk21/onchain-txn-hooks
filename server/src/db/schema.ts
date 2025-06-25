@@ -10,17 +10,16 @@ export const users = sqliteTable('users', {
   addressIdx: index('users_address_idx').on(table.address),
 }));
 
-// User automation wallets - generated private keys for transaction execution
-export const userWallets = sqliteTable('user_wallets', {
+// User HookConsumer contracts - user-deployed contracts implementing trigger interface
+export const hookConsumers = sqliteTable('hook_consumers', {
   id: text('id').primaryKey(),
   owner: text('owner').notNull().references(() => users.address), // Links to users.address
-  automationAddress: text('automation_address').notNull().unique(),
-  privateKeyEncrypted: text('private_key_encrypted').notNull(),
+  contractAddress: text('contract_address').notNull().unique(),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   createdAt: integer('created_at').notNull(),
 }, (table) => ({
-  ownerIdx: index('user_wallets_owner_idx').on(table.owner),
-  automationAddressIdx: index('user_wallets_automation_address_idx').on(table.automationAddress),
+  ownerIdx: index('hook_consumers_owner_idx').on(table.owner),
+  contractAddressIdx: index('hook_consumers_contract_address_idx').on(table.contractAddress),
 }));
 
 // Authentication sessions for SIWE
@@ -34,6 +33,18 @@ export const authSessions = sqliteTable('auth_sessions', {
 }, (table) => ({
   userAddressIdx: index('auth_sessions_user_address_idx').on(table.userAddress),
   nonceIdx: index('auth_sessions_nonce_idx').on(table.nonce),
+}));
+
+// Cached contract ABIs from Etherscan
+export const contracts = sqliteTable('contracts', {
+  address: text('address').primaryKey(), // Contract address
+  abi: text('abi', { mode: 'json' }).notNull(), // JSON serialized ABI
+  isVerified: integer('is_verified', { mode: 'boolean' }).notNull().default(true),
+  name: text('name'), // Contract name if available
+  createdAt: integer('created_at').notNull(),
+  lastFetchedAt: integer('last_fetched_at').notNull(),
+}, (table) => ({
+  lastFetchedIdx: index('contracts_last_fetched_idx').on(table.lastFetchedAt),
 }));
 
 // Event signatures that users can bid on
@@ -92,19 +103,18 @@ export const transactionTemplates = sqliteTable('transaction_templates', {
   createdAtIdx: index('transaction_templates_created_at_idx').on(table.createdAt),
 }));
 
-// Event hooks - user configurations for automation
+// Event hooks - user configurations for automation (updated for HookConsumer pattern)
 export const eventHooks = sqliteTable('event_hooks', {
   id: text('id').primaryKey(),
   eventSignature: text('event_signature').notNull(),
-  automationWallet: text('automation_wallet').notNull().references(() => userWallets.automationAddress),
-  transactionTemplateId: text('transaction_template_id').notNull().references(() => transactionTemplates.id),
+  hookConsumer: text('hook_consumer').notNull().references(() => hookConsumers.contractAddress),
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   executionCount: integer('execution_count').notNull().default(0),
   lastExecuted: integer('last_executed'),
   createdAt: integer('created_at').notNull(),
 }, (table) => ({
   eventSignatureIdx: index('event_hooks_event_signature_idx').on(table.eventSignature),
-  automationWalletIdx: index('event_hooks_automation_wallet_idx').on(table.automationWallet),
+  hookConsumerIdx: index('event_hooks_hook_consumer_idx').on(table.hookConsumer),
   isActiveIdx: index('event_hooks_is_active_idx').on(table.isActive),
 }));
 
